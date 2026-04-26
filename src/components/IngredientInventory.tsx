@@ -26,16 +26,25 @@ export default function IngredientInventory({ inventory, onBack, userId }: Ingre
 
   useEffect(() => {
     setCategories(storageManager.getCategories());
-    const q = query(collection(db, 'categories'), where('userId', '==', userId), orderBy('order', 'asc'));
+    // 不用 orderBy 避免需要複合索引，改在 client 端排序
+    const q = query(collection(db, 'categories'), where('userId', '==', userId));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const firebaseCategories = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Category[];
-      const localCategories = storageManager.getCategories();
-      const merged = [...localCategories];
-      firebaseCategories.forEach(fbC => {
-        const index = merged.findIndex(lC => lC.id === fbC.id);
-        if (index >= 0) merged[index] = fbC; else merged.push(fbC);
+      const firebaseCategories = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { ...data, id: data.id || doc.id } as Category;
       });
-      setCategories(merged.sort((a, b) => (a.order || 0) - (b.order || 0)));
+      // 以 Firestore 資料為主，本地補漏，按名稱去重
+      const seen = new Set<string>();
+      const merged: Category[] = [];
+      [...firebaseCategories, ...storageManager.getCategories()].forEach(cat => {
+        if (!seen.has(cat.name)) { seen.add(cat.name); merged.push(cat); }
+      });
+      merged.sort((a, b) => (a.order || 0) - (b.order || 0));
+      storageManager.getCategories; // keep local in sync
+      setCategories(merged);
+    }, (error) => {
+      console.error('Categories snapshot error:', error);
+      setCategories(storageManager.getCategories());
     });
     return () => unsubscribe();
   }, [userId]);
@@ -102,11 +111,15 @@ export default function IngredientInventory({ inventory, onBack, userId }: Ingre
     if (!window.confirm(`確定要匯入 75 筆原料資料嗎？\n（已存在的資料不會被刪除）`)) return;
     setIsSaving(true);
     try {
-      // 先匯入分類
+      // 先匯入分類（以 localStorage 為準去重，確保 Firestore 也有資料）
+      const existingLocalCats = storageManager.getCategories();
       for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
         const cat = { ...DEFAULT_CATEGORIES[i], userId };
-        const alreadyExists = categories.some(c => c.name === cat.name);
-        if (!alreadyExists) {
+        const existing = existingLocalCats.find(c => c.name === cat.name);
+        if (existing) {
+          // 本地有，確保 Firestore 也有（可能上次失敗沒寫進去）
+          await addDoc(collection(db, 'categories'), { ...cat, id: existing.id }).catch(() => {});
+        } else {
           const saved = storageManager.saveCategory(cat);
           await addDoc(collection(db, 'categories'), { ...cat, id: saved.id });
         }
