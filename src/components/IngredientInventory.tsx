@@ -173,12 +173,14 @@ export default function IngredientInventory({ inventory, onBack, userId }: Ingre
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400 w-5 h-5" />
             <input type="text" placeholder="搜尋食材名稱或廠商..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full bg-white border border-stone-200 rounded-2xl pl-12 pr-4 py-4 shadow-sm focus:ring-2 focus:ring-brand-500 outline-none" />
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-2">
-            <button onClick={() => setSelectedCategory('全部')} className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${selectedCategory === '全部' ? 'bg-stone-900 text-white' : 'bg-white text-stone-500 border border-stone-200'}`}>全部</button>
-            {categories.map(cat => (
-              <button key={cat.id} onClick={() => setSelectedCategory(cat.name)} className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all ${selectedCategory === cat.name ? 'bg-stone-900 text-white' : 'bg-white text-stone-500 border border-stone-200'}`}>{cat.name}</button>
-            ))}
-            <button onClick={() => setIsManagingCategories(true)} className="px-3 py-2 rounded-full bg-stone-100 text-stone-400 hover:text-stone-600"><Settings2 className="w-4 h-4" /></button>
+          <div className="flex items-center gap-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 flex-1 min-w-0" style={{scrollbarWidth:'none'}}>
+              <button onClick={() => setSelectedCategory('全部')} className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all flex-shrink-0 ${selectedCategory === '全部' ? 'bg-stone-900 text-white' : 'bg-white text-stone-500 border border-stone-200'}`}>全部</button>
+              {categories.map(cat => (
+                <button key={cat.id} onClick={() => setSelectedCategory(cat.name)} className={`px-4 py-2 rounded-full whitespace-nowrap text-sm font-medium transition-all flex-shrink-0 ${selectedCategory === cat.name ? 'bg-stone-900 text-white' : 'bg-white text-stone-500 border border-stone-200'}`}>{cat.name}</button>
+              ))}
+            </div>
+            <button onClick={() => setIsManagingCategories(true)} className="flex-shrink-0 p-2 rounded-full bg-stone-100 text-stone-400 hover:text-stone-600 hover:bg-stone-200 transition-all" title="管理分類"><Settings2 className="w-4 h-4" /></button>
           </div>
         </div>
 
