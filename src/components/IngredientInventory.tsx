@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, Plus, Trash2, Search, Save, Package, DollarSign, Calendar, Factory, Loader2, X, LayoutGrid, List, Tag, Settings2 } from 'lucide-react';
+import { ChevronLeft, Plus, Trash2, Search, Save, Package, DollarSign, Calendar, Factory, Loader2, X, LayoutGrid, List, Tag, Settings2, Download } from 'lucide-react';
 import { IngredientInventoryItem, Category } from '../types';
 import { db } from '../firebase';
 import { storageManager } from '../services/storageManager';
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { buildDefaultIngredients, DEFAULT_CATEGORIES } from '../data/defaultIngredients';
 
 interface IngredientInventoryProps {
   inventory: IngredientInventoryItem[];
@@ -97,6 +98,34 @@ export default function IngredientInventory({ inventory, onBack, userId }: Ingre
     } catch (error) { console.error('Delete Inventory Error:', error); }
   };
 
+  const handleImportDefaults = async () => {
+    if (!window.confirm(`確定要匯入 75 筆原料資料嗎？\n（已存在的資料不會被刪除）`)) return;
+    setIsSaving(true);
+    try {
+      // 先匯入分類
+      for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
+        const cat = { ...DEFAULT_CATEGORIES[i], userId };
+        const alreadyExists = categories.some(c => c.name === cat.name);
+        if (!alreadyExists) {
+          const saved = storageManager.saveCategory(cat);
+          await addDoc(collection(db, 'categories'), { ...cat, id: saved.id });
+        }
+      }
+      // 再匯入原料
+      const items = buildDefaultIngredients(userId);
+      for (const item of items) {
+        const saved = storageManager.saveInventoryItem(item);
+        await addDoc(collection(db, 'ingredient_inventory'), { ...item, id: saved.id });
+      }
+      alert('✅ 匯入完成！共匯入 75 筆原料資料。');
+    } catch (error) {
+      console.error('Import Error:', error);
+      alert('匯入過程發生錯誤，請重試。');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const startEdit = (item: IngredientInventoryItem) => { setEditingItem(item); setNewItem(item); setIsAdding(true); };
 
   return (
@@ -112,6 +141,12 @@ export default function IngredientInventory({ inventory, onBack, userId }: Ingre
               <button onClick={() => setViewMode('grid')} className={`p-1.5 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400'}`}><LayoutGrid className="w-4 h-4" /></button>
               <button onClick={() => setViewMode('table')} className={`p-1.5 rounded-lg transition-all ${viewMode === 'table' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-400'}`}><List className="w-4 h-4" /></button>
             </div>
+            {inventory.length === 0 && (
+              <button onClick={handleImportDefaults} disabled={isSaving} className="bg-stone-700 text-white px-4 py-2 rounded-full font-medium flex items-center gap-2 hover:bg-stone-800 transition-all disabled:opacity-50">
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                匯入原料庫
+              </button>
+            )}
             <button onClick={() => { setNewItem(initialItem); setEditingItem(null); setIsAdding(true); }} className="bg-brand-500 text-white px-4 py-2 rounded-full font-medium flex items-center gap-2 hover:bg-brand-600 transition-all">
               <Plus className="w-4 h-4" /> 新增食材
             </button>
