@@ -3,6 +3,8 @@ import { GoogleGenAI, Type } from "@google/genai";
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export const extractRecipeFromImage = async (base64Data: string, mimeType: string) => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY 未設定，請確認 GitHub Secret 已正確設定');
   const response = await ai.models.generateContent({
     model: "gemini-2.0-flash",
     contents: [{

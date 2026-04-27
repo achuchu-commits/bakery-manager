@@ -132,12 +132,7 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, e
       }));
     } catch (err: any) {
       console.error('AI 辨識錯誤:', err);
-      const msg = err?.message || '';
-      if (msg.includes('API key') || msg.includes('apiKey') || msg.includes('403') || msg.includes('401')) {
-        alert('AI 辨識失敗：API 金鑰無效或未設定。\n圖片已上傳，請手動填寫。');
-      } else {
-        alert('AI 辨識失敗，圖片已上傳，請手動填寫。');
-      }
+      alert(`AI 辨識失敗：${err?.message || String(err)}\n\n圖片已上傳，請手動填寫。`);
     }
     finally { setAiLoading(false); }
   };
