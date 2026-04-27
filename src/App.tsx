@@ -71,9 +71,10 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
 }
 
 // ── Recipe Editor ─────────────────────────────────────────────────────────────
-function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
+function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, existingSubCats }: {
   recipe: Recipe; onSave: (r: Recipe) => Promise<void>;
   onCancel: () => void; inventory: IngredientInventoryItem[];
+  existingMainCats: string[]; existingSubCats: string[];
 }) {
   const [form, setForm] = useState<Recipe>(recipe);
   const [saving, setSaving] = useState(false);
@@ -84,18 +85,14 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
   const aiFileRef = React.useRef<HTMLInputElement>(null);
   const coverFileRef = React.useRef<HTMLInputElement>(null);
 
-  // 從既有食譜取得分類建議
-  const existingCats = React.useMemo(() => {
-    const recipes = storageManager.getRecipes();
-    return {
-      main: [...new Set(recipes.map(r => r.mainCategory).filter(Boolean))],
-      sub: [...new Set(recipes.map(r => r.subCategory).filter(Boolean))],
-    };
-  }, []);
-
   // 食材庫分類
   const ingCategories = [...new Set(inventory.map(i => i.category).filter(Boolean))] as string[];
   const totalWeight = form.ingredients.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+  // 烘焙百分比基準：麵粉類總重，若無麵粉則用總重
+  const flourTotal = form.ingredients
+    .filter(i => inventory.find(inv => inv.name === i.name)?.category === '麵粉類')
+    .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+  const basisWeight = flourTotal > 0 ? flourTotal : totalWeight;
 
   // 壓縮圖片至最大 1000px 寬，JPEG 0.75 品質（約 50-150KB）
   const compressImage = (file: File): Promise<string> =>
@@ -232,24 +229,42 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
             placeholder="食譜描述..." rows={3} className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none resize-none" />
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-stone-500 mb-1">主分類（自由填寫）</label>
-              <input list="main-cat-list" value={form.mainCategory}
-                onChange={e => setForm(p => ({ ...p, mainCategory: e.target.value }))}
-                placeholder="例：餅乾、蛋糕…"
-                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none" />
-              <datalist id="main-cat-list">
-                {existingCats.main.map(c => <option key={c} value={c} />)}
-              </datalist>
+              <label className="block text-xs font-bold text-stone-500 mb-1">主分類</label>
+              <select value={form.mainCategory}
+                onChange={e => {
+                  if (e.target.value === '__new__') {
+                    const name = window.prompt('輸入新的主分類名稱');
+                    if (name?.trim()) setForm(p => ({ ...p, mainCategory: name.trim() }));
+                  } else {
+                    setForm(p => ({ ...p, mainCategory: e.target.value }));
+                  }
+                }}
+                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none">
+                <option value="">請選擇</option>
+                {existingMainCats.map(c => <option key={c} value={c}>{c}</option>)}
+                {form.mainCategory && !existingMainCats.includes(form.mainCategory) &&
+                  <option value={form.mainCategory}>{form.mainCategory}</option>}
+                <option value="__new__">＋ 新增分類</option>
+              </select>
             </div>
             <div>
-              <label className="block text-xs font-bold text-stone-500 mb-1">次分類（自由填寫）</label>
-              <input list="sub-cat-list" value={form.subCategory}
-                onChange={e => setForm(p => ({ ...p, subCategory: e.target.value }))}
-                placeholder="例：奶油餅乾…"
-                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none" />
-              <datalist id="sub-cat-list">
-                {existingCats.sub.map(c => <option key={c} value={c} />)}
-              </datalist>
+              <label className="block text-xs font-bold text-stone-500 mb-1">次分類</label>
+              <select value={form.subCategory}
+                onChange={e => {
+                  if (e.target.value === '__new__') {
+                    const name = window.prompt('輸入新的次分類名稱');
+                    if (name?.trim()) setForm(p => ({ ...p, subCategory: name.trim() }));
+                  } else {
+                    setForm(p => ({ ...p, subCategory: e.target.value }));
+                  }
+                }}
+                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none">
+                <option value="">請選擇</option>
+                {existingSubCats.map(c => <option key={c} value={c}>{c}</option>)}
+                {form.subCategory && !existingSubCats.includes(form.subCategory) &&
+                  <option value={form.subCategory}>{form.subCategory}</option>}
+                <option value="__new__">＋ 新增分類</option>
+              </select>
             </div>
           </div>
         </div>
@@ -294,23 +309,24 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
 
           {/* 詳細模式標題列 */}
           {ingMode === 'detail' && (
-            <div className="grid grid-cols-[2fr_72px_52px_56px_60px_24px] gap-1.5 text-[11px] font-bold text-stone-400 px-1">
+            <div className="grid grid-cols-[1fr_64px_42px_52px_68px_20px] gap-1.5 text-[11px] font-bold text-stone-400 px-1">
               <span>食材</span><span className="text-center">用量</span><span className="text-center">單位</span>
-              <span className="text-center">佔比%</span><span className="text-right">小計</span><span />
+              <span className="text-center">烘焙%</span><span className="text-center">小計/成本</span><span />
             </div>
           )}
 
           {form.ingredients.map((ing) => {
             const invItem = inventory.find(i => i.name === ing.name);
-            const unitPrice = invItem?.unitPrice ?? (ing as any).unitPrice ?? 0;
-            const subtotal = unitPrice * (ing.amount || 0);
-            const pct = totalWeight > 0 ? ((ing.amount || 0) / totalWeight * 100) : 0;
+            const savedUnitPrice = (ing as any).unitPrice ?? 0;
+            const unitPrice = invItem?.unitPrice ?? savedUnitPrice;
+            const subtotal = unitPrice * (Number(ing.amount) || 0);
+            const bakersPct = basisWeight > 0 ? ((Number(ing.amount) || 0) / basisWeight * 100) : 0;
             return (
               <div key={ing.id} className={ingMode === 'detail'
-                ? 'grid grid-cols-[2fr_72px_52px_56px_60px_24px] gap-1.5 items-center'
-                : 'flex gap-2 items-center'}>
+                ? 'grid grid-cols-[1fr_64px_42px_52px_68px_20px] gap-1.5 items-center'
+                : 'flex gap-1.5 items-center'}>
                 {/* 食材名稱 + 選擇器按鈕 */}
-                <div className="flex gap-1 min-w-0">
+                <div className={`flex gap-1 min-w-0 ${ingMode === 'simple' ? 'flex-[3]' : ''}`}>
                   <input value={ing.name} onChange={e => updateIngredient(ing.id, 'name', e.target.value)}
                     placeholder="食材名稱" className="flex-1 min-w-0 bg-stone-50 border border-stone-200 rounded-xl px-2.5 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
                   <button onClick={() => { setPickerIngId(ing.id); setPickerCat(null); }}
@@ -321,24 +337,32 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
                 </div>
                 {/* 用量 */}
                 <input type="number" value={ing.amount || ''} onChange={e => updateIngredient(ing.id, 'amount', Number(e.target.value))}
-                  placeholder="g" className="w-full bg-stone-50 border border-stone-200 rounded-xl px-2 py-2 text-sm text-center focus:ring-2 focus:ring-brand-500 outline-none" />
+                  placeholder="0" className={`bg-stone-50 border border-stone-200 rounded-xl px-2 py-2 text-sm text-center focus:ring-2 focus:ring-brand-500 outline-none ${ingMode === 'simple' ? 'w-20 shrink-0' : 'w-full'}`} />
                 {/* 單位 */}
                 <input value={ing.unit} onChange={e => updateIngredient(ing.id, 'unit', e.target.value)}
-                  placeholder="單位" className="w-full bg-stone-50 border border-stone-200 rounded-xl px-1 py-2 text-sm text-center focus:ring-2 focus:ring-brand-500 outline-none" />
+                  placeholder="g" className={`bg-stone-50 border border-stone-200 rounded-xl px-1 py-2 text-sm text-center focus:ring-2 focus:ring-brand-500 outline-none ${ingMode === 'simple' ? 'w-14 shrink-0' : 'w-full'}`} />
                 {/* 詳細欄位 */}
                 {ingMode === 'detail' && (
                   <>
-                    <span className="text-xs text-stone-500 text-center">{pct.toFixed(1)}%</span>
-                    <span className="text-xs text-emerald-600 text-right">{subtotal > 0 ? `$${subtotal.toFixed(1)}` : '—'}</span>
+                    <span className="text-xs text-stone-500 text-center font-medium">
+                      {bakersPct.toFixed(1)}%
+                    </span>
+                    {unitPrice > 0
+                      ? <span className="text-xs text-emerald-600 text-center font-medium">{subtotal > 0 ? `$${subtotal.toFixed(1)}` : '—'}</span>
+                      : <input type="number" min="0" step="0.001" placeholder="成本/g"
+                          value={savedUnitPrice || ''}
+                          onChange={e => updateIngredient(ing.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                          className="text-xs border border-dashed border-stone-300 rounded-lg px-1 py-1.5 text-center w-full focus:ring-1 focus:ring-brand-500 outline-none" />
+                    }
                   </>
                 )}
-                <button onClick={() => removeIngredient(ing.id)} className="text-stone-300 hover:text-red-400 flex items-center justify-center"><X className="w-4 h-4" /></button>
+                <button onClick={() => removeIngredient(ing.id)} className="shrink-0 text-stone-300 hover:text-red-400 flex items-center justify-center"><X className="w-4 h-4" /></button>
               </div>
             );
           })}
 
-          {/* 總計列 */}
-          <div className={`pt-2 border-t border-stone-100 flex ${ingMode === 'detail' ? 'justify-between' : 'justify-end'} text-sm font-bold`}>
+          {/* 總計列：兩種模式都是左右各一 */}
+          <div className="pt-2 border-t border-stone-100 flex justify-between text-sm font-bold">
             <span className="text-stone-500">總重量：<span className="text-stone-800">{totalWeight}g</span></span>
             {totalCost > 0 && <span className="text-emerald-700">總成本：${totalCost.toFixed(1)}</span>}
           </div>
@@ -601,6 +625,8 @@ export default function App() {
             onSave={handleSaveRecipe}
             onCancel={() => setView(selectedRecipe ? 'detail' : 'gallery')}
             inventory={inventory}
+            existingMainCats={[...new Set(recipes.map(r => r.mainCategory).filter(Boolean))]}
+            existingSubCats={[...new Set(recipes.map(r => r.subCategory).filter(Boolean))]}
           />
         </motion.div>
       )}
