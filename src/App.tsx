@@ -20,7 +20,7 @@ import {
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
-type View = 'gallery' | 'detail' | 'edit' | 'inventory';
+type View = 'gallery' | 'detail' | 'edit' | 'inventory' | 'compare';
 
 const newRecipeTemplate = (): Recipe => ({
   title: '', description: '', mainCategory: '', subCategory: '',
@@ -228,6 +228,11 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, e
           <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
             placeholder="食譜描述..." rows={3} className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none resize-none" />
           <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="block text-xs font-bold text-stone-500 mb-1">系列名稱 <span className="font-normal text-stone-400">（選填，用於版本比較，如「原味奶油曲奇」）</span></label>
+              <input value={form.series || ''} onChange={e => setForm(p => ({ ...p, series: e.target.value }))}
+                placeholder="同系列不同版本填相同名稱..." className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none text-sm" />
+            </div>
             <div>
               <label className="block text-xs font-bold text-stone-500 mb-1">主分類</label>
               <select value={form.mainCategory}
@@ -523,6 +528,133 @@ function RecipeDetail({ recipe, onEdit, onBack }: { recipe: Recipe; onEdit: () =
   );
 }
 
+// ── Compare View ──────────────────────────────────────────────────────────────
+function CompareView({ recipes, inventory, onBack }: {
+  recipes: Recipe[];
+  inventory: IngredientInventoryItem[];
+  onBack: () => void;
+}) {
+  // Compute baker's % basis for each recipe
+  const getBasis = (recipe: Recipe) => {
+    const flourTotal = recipe.ingredients
+      .filter(i => inventory.find(inv => inv.name === i.name)?.category === '麵粉類')
+      .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    const totalWeight = recipe.ingredients.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+    return flourTotal > 0 ? flourTotal : totalWeight;
+  };
+
+  // Collect all unique ingredient names, sorted by frequency then alpha
+  const nameCount = new Map<string, number>();
+  recipes.forEach(r => {
+    r.ingredients.forEach(i => {
+      if (i.name.trim()) nameCount.set(i.name, (nameCount.get(i.name) || 0) + 1);
+    });
+  });
+  const allNames = [...nameCount.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'zh-TW'))
+    .map(([name]) => name);
+
+  const bases = recipes.map(getBasis);
+
+  // Find a reasonable short label for each recipe
+  const getLabel = (recipe: Recipe) => {
+    if (recipe.series && recipe.title.replace(recipe.series, '').trim()) {
+      return recipe.title.replace(recipe.series, '').trim() || recipe.title;
+    }
+    return recipe.title;
+  };
+
+  return (
+    <div className="min-h-screen bg-stone-50 pb-24">
+      <header className="bg-white border-b border-stone-200 sticky top-0 z-10 px-4 py-4">
+        <div className="max-w-5xl mx-auto flex items-center justify-between">
+          <button onClick={onBack} className="p-2 text-stone-400 hover:text-stone-600 rounded-full"><ChevronLeft className="w-6 h-6" /></button>
+          <h2 className="font-serif font-bold text-stone-800">食譜比較</h2>
+          <div className="w-10" />
+        </div>
+      </header>
+
+      <main className="max-w-5xl mx-auto px-4 mt-8 space-y-6">
+        {/* Recipe summary cards */}
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${recipes.length}, minmax(0, 1fr))` }}>
+          {recipes.map((r, idx) => (
+            <div key={r.id} className="bg-white rounded-2xl p-4 shadow-sm border border-stone-100 text-center">
+              {r.image && <img src={r.image} alt={r.title} className="w-full aspect-video object-cover rounded-xl mb-3" />}
+              <div className="text-xs text-brand-600 font-bold mb-1">{r.subCategory}</div>
+              <div className="font-bold text-stone-800 text-sm leading-tight">{r.title}</div>
+              {r.series && <div className="text-xs text-stone-400 mt-1">系列：{r.series}</div>}
+              <div className="mt-2 text-xs text-stone-400">
+                總重 {r.ingredients.reduce((s, i) => s + (Number(i.amount) || 0), 0)}g
+                {bases[idx] !== r.ingredients.reduce((s, i) => s + (Number(i.amount) || 0), 0) && (
+                  <span className="ml-1">（麵粉 {bases[idx]}g）</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Merged ingredient table */}
+        <div className="bg-white rounded-3xl shadow-sm border border-stone-100 overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-stone-100">
+                <th className="text-left px-5 py-4 font-bold text-stone-600 w-36 shrink-0">食材</th>
+                {recipes.map((r, idx) => (
+                  <th key={r.id} className="px-3 py-4 font-bold text-stone-600 text-center min-w-[100px]">
+                    <div className="text-xs text-stone-400 font-normal mb-0.5">{r.series || ''}</div>
+                    <div className="text-sm leading-tight">{getLabel(r)}</div>
+                    <div className="text-[10px] text-stone-400 font-normal mt-0.5">烘焙%</div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {allNames.map((name, nameIdx) => {
+                const rowIngredients = recipes.map(r => r.ingredients.find(i => i.name === name) ?? null);
+                const hasAny = rowIngredients.some(Boolean);
+                if (!hasAny) return null;
+                const presentCount = rowIngredients.filter(Boolean).length;
+                return (
+                  <tr key={name} className={`border-b border-stone-50 ${nameIdx % 2 === 0 ? 'bg-stone-50/40' : 'bg-white'}`}>
+                    <td className="px-5 py-3 font-medium text-stone-700 whitespace-nowrap">
+                      {name}
+                      {presentCount < recipes.length && (
+                        <span className="ml-1.5 text-[10px] text-amber-500 font-bold">部分</span>
+                      )}
+                    </td>
+                    {rowIngredients.map((ing, rIdx) => {
+                      if (!ing) return (
+                        <td key={rIdx} className="px-3 py-3 text-center text-stone-300 font-bold text-base">—</td>
+                      );
+                      const pct = bases[rIdx] > 0 ? (Number(ing.amount) / bases[rIdx] * 100) : 0;
+                      return (
+                        <td key={rIdx} className="px-3 py-3 text-center">
+                          <span className="font-bold text-brand-600">{pct.toFixed(1)}%</span>
+                          <span className="text-[11px] text-stone-400 ml-1">({ing.amount}{ing.unit})</span>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {allNames.length === 0 && (
+            <div className="text-center py-12 text-stone-400">所選食譜沒有食材資料</div>
+          )}
+        </div>
+
+        {/* Legend */}
+        <div className="text-xs text-stone-400 text-center pb-4">
+          烘焙百分比以麵粉總重為基準（若無麵粉則以總重為基準）<br />
+          <span className="text-amber-500 font-bold">部分</span> 表示此食材不是所有食譜都有
+        </div>
+      </main>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -532,6 +664,7 @@ export default function App() {
   const [inventory, setInventory] = useState<IngredientInventoryItem[]>([]);
   const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
+  const [compareRecipes, setCompareRecipes] = useState<Recipe[]>([]);
 
   // Auth state
   useEffect(() => {
@@ -606,6 +739,7 @@ export default function App() {
             onDeleteRecipe={handleDeleteRecipe}
             onLogout={handleLogout}
             onOpenInventory={() => setView('inventory')}
+            onCompare={(selected) => { setCompareRecipes(selected); setView('compare'); }}
           />
         </motion.div>
       )}
@@ -625,8 +759,8 @@ export default function App() {
             onSave={handleSaveRecipe}
             onCancel={() => setView(selectedRecipe ? 'detail' : 'gallery')}
             inventory={inventory}
-            existingMainCats={[...new Set(recipes.map(r => r.mainCategory).filter(Boolean))]}
-            existingSubCats={[...new Set(recipes.map(r => r.subCategory).filter(Boolean))]}
+            existingMainCats={[...new Set(recipes.map(r => r.mainCategory).filter(Boolean))] as string[]}
+            existingSubCats={[...new Set(recipes.map(r => r.subCategory).filter(Boolean))] as string[]}
           />
         </motion.div>
       )}
@@ -636,6 +770,15 @@ export default function App() {
             inventory={inventory}
             onBack={() => setView('gallery')}
             userId={user.uid}
+          />
+        </motion.div>
+      )}
+      {view === 'compare' && compareRecipes.length >= 2 && (
+        <motion.div key="compare" initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }}>
+          <CompareView
+            recipes={compareRecipes}
+            inventory={inventory}
+            onBack={() => setView('gallery')}
           />
         </motion.div>
       )}

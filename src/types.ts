@@ -45,6 +45,7 @@ export interface Recipe {
   description: string;
   mainCategory: string;
   subCategory: string;
+  series?: string;          // 系列名稱，用於版本比較
   ingredients: Ingredient[];
   steps: Step[];
   image: string | null;
