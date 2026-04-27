@@ -12,7 +12,7 @@ export const extractRecipeFromImage = async (base64Data: string, mimeType: strin
       'HTTP-Referer': SITE_URL,
     },
     body: JSON.stringify({
-      model: 'qwen/qwen2.5-vl-72b-instruct:free',
+      model: 'minimax/minimax-m2.5:free',
       messages: [
         {
           role: 'user',
