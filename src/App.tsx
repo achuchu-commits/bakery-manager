@@ -130,7 +130,15 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, e
         steps: (result.steps?.length ? result.steps : p.steps).map((s: any) => ({ ...s, id: s.id || crypto.randomUUID() })),
         bakingStages: (result.bakingStages?.length ? result.bakingStages : p.bakingStages).map((b: any) => ({ ...b, id: b.id || crypto.randomUUID() })),
       }));
-    } catch { alert('AI 辨識失敗，圖片已上傳，請手動填寫。'); }
+    } catch (err: any) {
+      console.error('AI 辨識錯誤:', err);
+      const msg = err?.message || '';
+      if (msg.includes('API key') || msg.includes('apiKey') || msg.includes('403') || msg.includes('401')) {
+        alert('AI 辨識失敗：API 金鑰無效或未設定。\n圖片已上傳，請手動填寫。');
+      } else {
+        alert('AI 辨識失敗，圖片已上傳，請手動填寫。');
+      }
+    }
     finally { setAiLoading(false); }
   };
 
@@ -314,9 +322,14 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, e
 
           {/* 詳細模式標題列 */}
           {ingMode === 'detail' && (
-            <div className="grid grid-cols-[1fr_64px_42px_52px_68px_20px] gap-1.5 text-[11px] font-bold text-stone-400 px-1">
-              <span>食材</span><span className="text-center">用量</span><span className="text-center">單位</span>
-              <span className="text-center">烘焙%</span><span className="text-center">小計/成本</span><span />
+            <div className="grid grid-cols-[1fr_60px_38px_44px_44px_64px_20px] gap-1 text-[10px] font-bold text-stone-400 px-1">
+              <span>食材</span>
+              <span className="text-center">用量</span>
+              <span className="text-center">單位</span>
+              <span className="text-center">烘焙%</span>
+              <span className="text-center">實際%</span>
+              <span className="text-center">小計/成本</span>
+              <span />
             </div>
           )}
 
@@ -325,10 +338,12 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, e
             const savedUnitPrice = (ing as any).unitPrice ?? 0;
             const unitPrice = invItem?.unitPrice ?? savedUnitPrice;
             const subtotal = unitPrice * (Number(ing.amount) || 0);
-            const bakersPct = basisWeight > 0 ? ((Number(ing.amount) || 0) / basisWeight * 100) : 0;
+            const amt = Number(ing.amount) || 0;
+            const bakersPct = basisWeight > 0 ? (amt / basisWeight * 100) : 0;
+            const actualPct = totalWeight > 0 ? (amt / totalWeight * 100) : 0;
             return (
               <div key={ing.id} className={ingMode === 'detail'
-                ? 'grid grid-cols-[1fr_64px_42px_52px_68px_20px] gap-1.5 items-center'
+                ? 'grid grid-cols-[1fr_60px_38px_44px_44px_64px_20px] gap-1 items-center'
                 : 'flex gap-1.5 items-center'}>
                 {/* 食材名稱 + 選擇器按鈕 */}
                 <div className={`flex gap-1 min-w-0 ${ingMode === 'simple' ? 'flex-[3]' : ''}`}>
@@ -349,9 +364,15 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, e
                 {/* 詳細欄位 */}
                 {ingMode === 'detail' && (
                   <>
-                    <span className="text-xs text-stone-500 text-center font-medium">
+                    {/* 烘焙% */}
+                    <span className="text-xs text-brand-600 text-center font-medium">
                       {bakersPct.toFixed(1)}%
                     </span>
+                    {/* 實際% */}
+                    <span className="text-xs text-stone-500 text-center font-medium">
+                      {actualPct.toFixed(1)}%
+                    </span>
+                    {/* 成本 */}
                     {unitPrice > 0
                       ? <span className="text-xs text-emerald-600 text-center font-medium">{subtotal > 0 ? `$${subtotal.toFixed(1)}` : '—'}</span>
                       : <input type="number" min="0" step="0.001" placeholder="成本/g"
