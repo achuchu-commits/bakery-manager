@@ -8,7 +8,16 @@ export const extractRecipeFromImage = async (base64Data: string, mimeType: strin
     contents: [{
       parts: [
         { inlineData: { data: base64Data, mimeType } },
-        { text: "請從這張食譜照片中提取資訊，並以 JSON 格式返回。包含食譜標題 (title)、描述 (description)、主要分類 (mainCategory)、次要分類 (subCategory)、食材列表 (ingredients: {name, amount, unit})、步驟列表 (steps: {content})、烘焙階段 (bakingStages: {temp, time}) 以及筆記 (notes)。食材數量 (amount) 必須是數字。" }
+        { text: `請仔細辨識這張烘焙食譜照片（可能是手寫筆記或印刷版），盡力提取所有可見資訊，以 JSON 格式回傳。
+
+規則：
+- title：食譜名稱，若不清楚請用「未命名食譜」
+- ingredients 的 amount 必須是純數字（例如 100 而非 "100g"），單位另外放在 unit
+- unit 常見值：g、ml、個、顆、片、匙、杯、適量
+- bakingStages 請填溫度（如「上火180 下火160」）和時間（如「25分鐘」）
+- steps 請依序列出每個製作步驟
+- 看不清楚的欄位請填空字串，不要亂猜
+- notes 可填入食譜備注、份量說明等` }
       ]
     }],
     config: {

@@ -89,30 +89,55 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
   const [form, setForm] = useState<Recipe>(recipe);
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
-  const fileRef = React.useRef<HTMLInputElement>(null);
+  const aiFileRef = React.useRef<HTMLInputElement>(null);
+  const coverFileRef = React.useRef<HTMLInputElement>(null);
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // 壓縮圖片至最大 1000px 寬，JPEG 0.75 品質（約 50-150KB）
+  const compressImage = (file: File): Promise<string> =>
+    new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          const maxW = 1000;
+          let w = img.width, h = img.height;
+          if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', 0.75));
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+
+  // AI 辨識：壓縮 → Gemini → 填入表單
+  const handleAIUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const dataUrl = ev.target?.result as string;
+    e.target.value = '';
+    setAiLoading(true);
+    try {
+      const dataUrl = await compressImage(file);
       setForm(p => ({ ...p, image: dataUrl }));
-      if (window.confirm('要用 AI 自動辨識食譜內容嗎？')) {
-        setAiLoading(true);
-        try {
-          const base64 = dataUrl.split(',')[1];
-          const result = await extractRecipeFromImage(base64, file.type);
-          setForm(p => ({
-            ...p, ...result,
-            ingredients: (result.ingredients || []).map((i: any) => ({ ...i, id: crypto.randomUUID() })),
-            steps: (result.steps || []).map((s: any) => ({ ...s, id: crypto.randomUUID() })),
-            bakingStages: (result.bakingStages || []).map((b: any) => ({ ...b, id: crypto.randomUUID() })),
-          }));
-        } catch { alert('AI 辨識失敗，請手動填寫。'); }
-        finally { setAiLoading(false); }
-      }
-    };
-    reader.readAsDataURL(file);
+      const base64 = dataUrl.split(',')[1];
+      const result = await extractRecipeFromImage(base64, 'image/jpeg');
+      setForm(p => ({
+        ...p, ...result, image: dataUrl,
+        ingredients: (result.ingredients?.length ? result.ingredients : p.ingredients).map((i: any) => ({ ...i, id: i.id || crypto.randomUUID() })),
+        steps: (result.steps?.length ? result.steps : p.steps).map((s: any) => ({ ...s, id: s.id || crypto.randomUUID() })),
+        bakingStages: (result.bakingStages?.length ? result.bakingStages : p.bakingStages).map((b: any) => ({ ...b, id: b.id || crypto.randomUUID() })),
+      }));
+    } catch { alert('AI 辨識失敗，圖片已上傳，請手動填寫。'); }
+    finally { setAiLoading(false); }
+  };
+
+  // 只上傳封面圖：壓縮即可，不送 AI
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    e.target.value = '';
+    const dataUrl = await compressImage(file);
+    setForm(p => ({ ...p, image: dataUrl }));
   };
 
   const addIngredient = () => setForm(p => ({ ...p, ingredients: [...p.ingredients, { id: crypto.randomUUID(), name: '', amount: 0, unit: 'g' }] }));
@@ -165,17 +190,32 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
       <main className="max-w-3xl mx-auto px-4 mt-8 space-y-6">
         {/* Image */}
         <div className="bg-white rounded-3xl overflow-hidden shadow-sm border border-stone-100">
-          <div className="aspect-video bg-stone-100 relative cursor-pointer group" onClick={() => fileRef.current?.click()}>
-            {form.image
-              ? <img src={form.image} alt="食譜" className="w-full h-full object-cover" />
-              : <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-stone-300">
-                  <Upload className="w-10 h-10" /><span className="text-sm">點擊上傳食譜照片</span>
-                </div>}
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
-              <span className="bg-white/90 text-stone-800 px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2"><Sparkles className="w-4 h-4 text-brand-500" />上傳並 AI 辨識</span>
+          {form.image ? (
+            <div className="relative aspect-video">
+              <img src={form.image} alt="食譜" className="w-full h-full object-cover" />
+              <button onClick={() => setForm(p => ({ ...p, image: null }))}
+                className="absolute top-3 right-3 bg-black/60 hover:bg-black/80 text-white rounded-full p-1.5 transition-all" title="移除圖片">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
-          </div>
+          ) : (
+            <div className="aspect-video bg-stone-50 flex flex-col items-center justify-center gap-4 p-6">
+              <Upload className="w-10 h-10 text-stone-300" />
+              <p className="text-sm text-stone-400">選擇上傳方式</p>
+              <div className="flex gap-3">
+                <button onClick={() => aiFileRef.current?.click()}
+                  className="flex items-center gap-2 bg-brand-500 text-white px-5 py-2.5 rounded-full font-bold text-sm hover:bg-brand-600 transition-all">
+                  <Sparkles className="w-4 h-4" /> AI 辨識食譜
+                </button>
+                <button onClick={() => coverFileRef.current?.click()}
+                  className="flex items-center gap-2 bg-stone-200 text-stone-700 px-5 py-2.5 rounded-full font-bold text-sm hover:bg-stone-300 transition-all">
+                  <Upload className="w-4 h-4" /> 只上傳封面
+                </button>
+              </div>
+            </div>
+          )}
+          <input ref={aiFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleAIUpload} />
+          <input ref={coverFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCoverUpload} />
         </div>
 
         {/* Basic Info */}

@@ -17,14 +17,13 @@ export const storageManager = {
     const recipes = storageManager.getRecipes();
     const id = recipe.id || crypto.randomUUID();
     const recipeWithId = { ...recipe, id, createdAt: recipe.createdAt || Date.now() };
+    // 圖片不存 localStorage（圖片存 Firestore 即可，避免空間已滿）
+    const recipeForStorage = { ...recipeWithId, image: null };
     const index = recipes.findIndex(r => r.id === id);
-    if (index >= 0) recipes[index] = recipeWithId;
-    else recipes.push(recipeWithId);
+    if (index >= 0) recipes[index] = recipeForStorage;
+    else recipes.push(recipeForStorage);
     try { localStorage.setItem(STORAGE_KEYS.RECIPES, JSON.stringify(recipes)); }
-    catch (error) {
-      if (error instanceof Error && error.name === 'QuotaExceededError')
-        alert('儲存空間已滿，請刪除部分食譜或圖片後再試。');
-    }
+    catch { /* ignore */ }
     return recipeWithId;
   },
   deleteRecipe: (id: string) => {
