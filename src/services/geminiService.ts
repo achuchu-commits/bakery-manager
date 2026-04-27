@@ -12,7 +12,7 @@ export const extractRecipeFromImage = async (base64Data: string, mimeType: strin
       'HTTP-Referer': SITE_URL,
     },
     body: JSON.stringify({
-      model: 'google/gemini-2.0-flash-exp:free',
+      model: 'meta-llama/llama-4-scout:free',
       messages: [
         {
           role: 'user',
