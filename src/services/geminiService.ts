@@ -1,29 +1,16 @@
-const API_KEY = process.env.GEMINI_API_KEY;
-const SITE_URL = 'https://achuchu-commits.github.io/bakery-manager/';
+import { GoogleGenAI, Type } from "@google/genai";
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 export const extractRecipeFromImage = async (base64Data: string, mimeType: string) => {
-  if (!API_KEY) throw new Error('API 金鑰未設定，請確認 GitHub Secret 已正確設定');
+  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY 未設定');
 
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': SITE_URL,
-    },
-    body: JSON.stringify({
-      model: 'minimax/minimax-m2.5:free',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mimeType};base64,${base64Data}` }
-            },
-            {
-              type: 'text',
-              text: `請仔細辨識這張烘焙食譜照片（可能是手寫筆記或印刷版），盡力提取所有可見資訊，只回傳 JSON 格式，不要加任何說明文字。
+  const response = await ai.models.generateContent({
+    model: "gemini-2.0-flash",
+    contents: [{
+      parts: [
+        { inlineData: { data: base64Data, mimeType } },
+        { text: `請仔細辨識這張烘焙食譜照片（可能是手寫筆記或印刷版），盡力提取所有可見資訊，以 JSON 格式回傳。
 
 規則：
 - title：食譜名稱，若不清楚請用「未命名食譜」
@@ -32,35 +19,26 @@ export const extractRecipeFromImage = async (base64Data: string, mimeType: strin
 - bakingStages 請填溫度（如「上火180 下火160」）和時間（如「25分鐘」）
 - steps 請依序列出每個製作步驟
 - 看不清楚的欄位請填空字串，不要亂猜
-- notes 可填入食譜備注、份量說明等
-
-回傳格式：
-{
-  "title": "",
-  "description": "",
-  "mainCategory": "",
-  "subCategory": "",
-  "ingredients": [{"name": "", "amount": 0, "unit": ""}],
-  "steps": [{"content": ""}],
-  "bakingStages": [{"temp": "", "time": ""}],
-  "notes": ""
-}`
-            }
-          ]
-        }
+- notes 可填入食譜備注、份量說明等` }
       ]
-    })
+    }],
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          title: { type: Type.STRING },
+          description: { type: Type.STRING },
+          mainCategory: { type: Type.STRING },
+          subCategory: { type: Type.STRING },
+          ingredients: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, amount: { type: Type.NUMBER }, unit: { type: Type.STRING } }, required: ["name", "amount", "unit"] } },
+          steps: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { content: { type: Type.STRING } }, required: ["content"] } },
+          bakingStages: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { temp: { type: Type.STRING }, time: { type: Type.STRING } }, required: ["temp", "time"] } },
+          notes: { type: Type.STRING }
+        },
+        required: ["title", "ingredients", "steps"]
+      }
+    }
   });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(JSON.stringify(err));
-  }
-
-  const data = await response.json();
-  const text: string = data.choices?.[0]?.message?.content || '{}';
-
-  // 去除 markdown code block（有時模型會包 ```json ... ```）
-  const cleaned = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-  return JSON.parse(cleaned);
+  return JSON.parse(response.text || "{}");
 };
