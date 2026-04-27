@@ -22,19 +22,8 @@ import html2canvas from 'html2canvas';
 
 type View = 'gallery' | 'detail' | 'edit' | 'inventory';
 
-const MAIN_CATEGORIES = ['吐司 & 麵包', '蛋糕 & 烘焙', '餅乾 & 酥點', '泡芙 & 塔派', '中式糕點', '其他'];
-const SUB_CATEGORIES: Record<string, string[]> = {
-  '吐司 & 麵包': ['白吐司', '全麥吐司', '甜麵包', '歐式麵包', '其他'],
-  '蛋糕 & 烘焙': ['戚風蛋糕', '海綿蛋糕', '磅蛋糕', '起司蛋糕', '其他'],
-  '餅乾 & 酥點': ['奶油餅乾', '酥餅', '馬卡龍', '其他'],
-  '泡芙 & 塔派': ['泡芙', '塔', '派', '其他'],
-  '中式糕點': ['月餅', '鳳梨酥', '蛋黃酥', '其他'],
-  '其他': ['其他'],
-};
-
 const newRecipeTemplate = (): Recipe => ({
-  title: '', description: '', mainCategory: MAIN_CATEGORIES[0],
-  subCategory: SUB_CATEGORIES[MAIN_CATEGORIES[0]][0],
+  title: '', description: '', mainCategory: '', subCategory: '',
   ingredients: [{ id: crypto.randomUUID(), name: '', amount: 0, unit: 'g' }],
   steps: [{ id: crypto.randomUUID(), content: '' }],
   bakingStages: [{ id: crypto.randomUUID(), temp: '', time: '' }],
@@ -89,8 +78,24 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
   const [form, setForm] = useState<Recipe>(recipe);
   const [saving, setSaving] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [ingMode, setIngMode] = useState<'simple' | 'detail'>('simple');
+  const [pickerIngId, setPickerIngId] = useState<string | null>(null);
+  const [pickerCat, setPickerCat] = useState<string | null>(null);
   const aiFileRef = React.useRef<HTMLInputElement>(null);
   const coverFileRef = React.useRef<HTMLInputElement>(null);
+
+  // 從既有食譜取得分類建議
+  const existingCats = React.useMemo(() => {
+    const recipes = storageManager.getRecipes();
+    return {
+      main: [...new Set(recipes.map(r => r.mainCategory).filter(Boolean))],
+      sub: [...new Set(recipes.map(r => r.subCategory).filter(Boolean))],
+    };
+  }, []);
+
+  // 食材庫分類
+  const ingCategories = [...new Set(inventory.map(i => i.category).filter(Boolean))] as string[];
+  const totalWeight = form.ingredients.reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
 
   // 壓縮圖片至最大 1000px 寬，JPEG 0.75 品質（約 50-150KB）
   const compressImage = (file: File): Promise<string> =>
@@ -141,7 +146,7 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
   };
 
   const addIngredient = () => setForm(p => ({ ...p, ingredients: [...p.ingredients, { id: crypto.randomUUID(), name: '', amount: 0, unit: 'g' }] }));
-  const updateIngredient = (id: string, field: keyof Ingredient, value: any) =>
+  const updateIngredient = (id: string, field: string, value: any) =>
     setForm(p => ({ ...p, ingredients: p.ingredients.map(i => i.id === id ? { ...i, [field]: value } : i) }));
   const removeIngredient = (id: string) => setForm(p => ({ ...p, ingredients: p.ingredients.filter(i => i.id !== id) }));
 
@@ -214,8 +219,8 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
               </div>
             </div>
           )}
-          <input ref={aiFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleAIUpload} />
-          <input ref={coverFileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleCoverUpload} />
+          <input ref={aiFileRef} type="file" accept="image/*" className="hidden" onChange={handleAIUpload} />
+          <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
         </div>
 
         {/* Basic Info */}
@@ -227,18 +232,24 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
             placeholder="食譜描述..." rows={3} className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none resize-none" />
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs font-bold text-stone-500 mb-1">主分類</label>
-              <select value={form.mainCategory} onChange={e => setForm(p => ({ ...p, mainCategory: e.target.value, subCategory: SUB_CATEGORIES[e.target.value][0] }))}
-                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none">
-                {MAIN_CATEGORIES.map(c => <option key={c}>{c}</option>)}
-              </select>
+              <label className="block text-xs font-bold text-stone-500 mb-1">主分類（自由填寫）</label>
+              <input list="main-cat-list" value={form.mainCategory}
+                onChange={e => setForm(p => ({ ...p, mainCategory: e.target.value }))}
+                placeholder="例：餅乾、蛋糕…"
+                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none" />
+              <datalist id="main-cat-list">
+                {existingCats.main.map(c => <option key={c} value={c} />)}
+              </datalist>
             </div>
             <div>
-              <label className="block text-xs font-bold text-stone-500 mb-1">次分類</label>
-              <select value={form.subCategory} onChange={e => setForm(p => ({ ...p, subCategory: e.target.value }))}
-                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none">
-                {(SUB_CATEGORIES[form.mainCategory] || []).map(c => <option key={c}>{c}</option>)}
-              </select>
+              <label className="block text-xs font-bold text-stone-500 mb-1">次分類（自由填寫）</label>
+              <input list="sub-cat-list" value={form.subCategory}
+                onChange={e => setForm(p => ({ ...p, subCategory: e.target.value }))}
+                placeholder="例：奶油餅乾…"
+                className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-brand-500 outline-none" />
+              <datalist id="sub-cat-list">
+                {existingCats.sub.map(c => <option key={c} value={c} />)}
+              </datalist>
             </div>
           </div>
         </div>
@@ -265,28 +276,112 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory }: {
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-100 space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="font-bold text-stone-800">食材列表</h3>
-            <button onClick={addIngredient} className="text-brand-500 text-sm font-bold flex items-center gap-1"><Plus className="w-4 h-4" />新增</button>
-          </div>
-          {form.ingredients.map((ing) => (
-            <div key={ing.id} className="flex gap-2 items-center">
-              <input list={`ing-list-${ing.id}`} value={ing.name} onChange={e => updateIngredient(ing.id, 'name', e.target.value)}
-                placeholder="食材名稱" className="flex-1 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
-              <datalist id={`ing-list-${ing.id}`}>
-                {inventory.map(i => <option key={i.id} value={i.name} />)}
-              </datalist>
-              <input type="number" value={ing.amount || ''} onChange={e => updateIngredient(ing.id, 'amount', Number(e.target.value))}
-                placeholder="份量" className="w-20 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
-              <input value={ing.unit} onChange={e => updateIngredient(ing.id, 'unit', e.target.value)}
-                placeholder="單位" className="w-14 bg-stone-50 border border-stone-200 rounded-xl px-2 py-2 text-sm text-center focus:ring-2 focus:ring-brand-500 outline-none" />
-              <button onClick={() => removeIngredient(ing.id)} className="text-stone-300 hover:text-red-400"><X className="w-4 h-4" /></button>
+            <div className="flex items-center gap-3">
+              {/* 模式切換 */}
+              <div className="flex bg-stone-100 rounded-xl p-1 text-xs font-bold">
+                <button onClick={() => setIngMode('simple')}
+                  className={`px-3 py-1 rounded-lg transition-all ${ingMode === 'simple' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-400'}`}>
+                  精簡
+                </button>
+                <button onClick={() => setIngMode('detail')}
+                  className={`px-3 py-1 rounded-lg transition-all ${ingMode === 'detail' ? 'bg-white text-stone-800 shadow-sm' : 'text-stone-400'}`}>
+                  詳細
+                </button>
+              </div>
+              <button onClick={addIngredient} className="text-brand-500 text-sm font-bold flex items-center gap-1"><Plus className="w-4 h-4" />新增</button>
             </div>
-          ))}
-          {totalCost > 0 && (
-            <div className="mt-2 p-3 bg-emerald-50 rounded-xl text-sm font-bold text-emerald-700">
-              估計材料成本：${totalCost.toFixed(1)}
+          </div>
+
+          {/* 詳細模式標題列 */}
+          {ingMode === 'detail' && (
+            <div className="grid grid-cols-[2fr_72px_52px_56px_60px_24px] gap-1.5 text-[11px] font-bold text-stone-400 px-1">
+              <span>食材</span><span className="text-center">用量</span><span className="text-center">單位</span>
+              <span className="text-center">佔比%</span><span className="text-right">小計</span><span />
             </div>
           )}
+
+          {form.ingredients.map((ing) => {
+            const invItem = inventory.find(i => i.name === ing.name);
+            const unitPrice = invItem?.unitPrice ?? (ing as any).unitPrice ?? 0;
+            const subtotal = unitPrice * (ing.amount || 0);
+            const pct = totalWeight > 0 ? ((ing.amount || 0) / totalWeight * 100) : 0;
+            return (
+              <div key={ing.id} className={ingMode === 'detail'
+                ? 'grid grid-cols-[2fr_72px_52px_56px_60px_24px] gap-1.5 items-center'
+                : 'flex gap-2 items-center'}>
+                {/* 食材名稱 + 選擇器按鈕 */}
+                <div className="flex gap-1 min-w-0">
+                  <input value={ing.name} onChange={e => updateIngredient(ing.id, 'name', e.target.value)}
+                    placeholder="食材名稱" className="flex-1 min-w-0 bg-stone-50 border border-stone-200 rounded-xl px-2.5 py-2 text-sm focus:ring-2 focus:ring-brand-500 outline-none" />
+                  <button onClick={() => { setPickerIngId(ing.id); setPickerCat(null); }}
+                    title="從食材庫選擇"
+                    className="shrink-0 w-8 h-[38px] bg-stone-100 hover:bg-stone-200 border border-stone-200 rounded-xl text-stone-500 text-base flex items-center justify-center transition-all">
+                    ≡
+                  </button>
+                </div>
+                {/* 用量 */}
+                <input type="number" value={ing.amount || ''} onChange={e => updateIngredient(ing.id, 'amount', Number(e.target.value))}
+                  placeholder="g" className="w-full bg-stone-50 border border-stone-200 rounded-xl px-2 py-2 text-sm text-center focus:ring-2 focus:ring-brand-500 outline-none" />
+                {/* 單位 */}
+                <input value={ing.unit} onChange={e => updateIngredient(ing.id, 'unit', e.target.value)}
+                  placeholder="單位" className="w-full bg-stone-50 border border-stone-200 rounded-xl px-1 py-2 text-sm text-center focus:ring-2 focus:ring-brand-500 outline-none" />
+                {/* 詳細欄位 */}
+                {ingMode === 'detail' && (
+                  <>
+                    <span className="text-xs text-stone-500 text-center">{pct.toFixed(1)}%</span>
+                    <span className="text-xs text-emerald-600 text-right">{subtotal > 0 ? `$${subtotal.toFixed(1)}` : '—'}</span>
+                  </>
+                )}
+                <button onClick={() => removeIngredient(ing.id)} className="text-stone-300 hover:text-red-400 flex items-center justify-center"><X className="w-4 h-4" /></button>
+              </div>
+            );
+          })}
+
+          {/* 總計列 */}
+          <div className={`pt-2 border-t border-stone-100 flex ${ingMode === 'detail' ? 'justify-between' : 'justify-end'} text-sm font-bold`}>
+            <span className="text-stone-500">總重量：<span className="text-stone-800">{totalWeight}g</span></span>
+            {totalCost > 0 && <span className="text-emerald-700">總成本：${totalCost.toFixed(1)}</span>}
+          </div>
         </div>
+
+        {/* 食材選擇器 Modal */}
+        {pickerIngId && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-end" onClick={() => { setPickerIngId(null); setPickerCat(null); }}>
+            <div className="bg-white rounded-t-3xl w-full p-6 max-h-[70vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                {pickerCat
+                  ? <button className="flex items-center gap-2 text-stone-600 font-bold" onClick={() => setPickerCat(null)}>← {pickerCat}</button>
+                  : <h3 className="font-bold text-stone-800">選擇分類</h3>}
+                <button onClick={() => { setPickerIngId(null); setPickerCat(null); }} className="text-stone-400 hover:text-stone-700"><X className="w-5 h-5" /></button>
+              </div>
+              {!pickerCat ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {ingCategories.map(cat => (
+                    <button key={cat} onClick={() => setPickerCat(cat)}
+                      className="p-3 bg-stone-50 rounded-2xl text-sm font-medium text-stone-700 hover:bg-brand-50 hover:text-brand-600 transition-all text-left">
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  {inventory.filter(i => i.category === pickerCat).map(item => (
+                    <button key={item.id} className="w-full text-left px-4 py-3 hover:bg-stone-50 rounded-xl flex items-center justify-between transition-all"
+                      onClick={() => {
+                        updateIngredient(pickerIngId, 'name', item.name);
+                        updateIngredient(pickerIngId, 'unit', item.unit);
+                        if (item.unitPrice) (updateIngredient as any)(pickerIngId, 'unitPrice', item.unitPrice);
+                        setPickerIngId(null); setPickerCat(null);
+                      }}>
+                      <span className="text-stone-800 font-medium">{item.name}</span>
+                      <span className="text-xs text-stone-400">{item.spec}{item.unit} · ${item.unitPrice?.toFixed(3)}/{item.unit}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Steps */}
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-100 space-y-3">
