@@ -459,16 +459,23 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, e
 
 // ── Recipe Detail ─────────────────────────────────────────────────────────────
 function RecipeDetail({ recipe, onEdit, onBack }: { recipe: Recipe; onEdit: () => void; onBack: () => void }) {
-  const printRef = React.useRef<HTMLDivElement>(null);
+  const cardRef = React.useRef<HTMLDivElement>(null);
 
-  const handleExportPDF = async () => {
-    if (!printRef.current) return;
-    const canvas = await html2canvas(printRef.current, { scale: 2, useCORS: true });
+  const handleDownloadCard = async () => {
+    if (!cardRef.current) return;
+    const canvas = await html2canvas(cardRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
     const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-    const w = pdf.internal.pageSize.getWidth();
-    const h = (canvas.height * w) / canvas.width;
-    pdf.addImage(imgData, 'PNG', 0, 0, w, h);
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    const imgH = (canvas.height * pageW) / canvas.width;
+    // 若超過一頁，自動分頁
+    let y = 0;
+    while (y < imgH) {
+      if (y > 0) pdf.addPage();
+      pdf.addImage(imgData, 'PNG', 0, -y, pageW, imgH);
+      y += pageH;
+    }
     pdf.save(`${recipe.title}.pdf`);
   };
 
@@ -478,19 +485,22 @@ function RecipeDetail({ recipe, onEdit, onBack }: { recipe: Recipe; onEdit: () =
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <button onClick={onBack} className="p-2 text-stone-400 hover:text-stone-600 rounded-full"><ChevronLeft className="w-6 h-6" /></button>
           <div className="flex gap-2">
-            <button onClick={handleExportPDF} className="p-2 text-stone-400 hover:text-stone-600 rounded-full" title="匯出 PDF"><FileText className="w-5 h-5" /></button>
-            <button onClick={() => window.print()} className="p-2 text-stone-400 hover:text-stone-600 rounded-full" title="列印"><Printer className="w-5 h-5" /></button>
+            <button onClick={handleDownloadCard} className="flex items-center gap-1.5 px-4 py-2 text-stone-500 hover:text-brand-600 hover:bg-brand-50 rounded-full font-medium text-sm transition-all" title="下載食譜卡片 PDF">
+              <FileText className="w-4 h-4" /> 下載食譜
+            </button>
             <button onClick={onEdit} className="bg-brand-500 text-white px-4 py-2 rounded-full font-bold text-sm hover:bg-brand-600">編輯</button>
           </div>
         </div>
       </header>
 
-      <div ref={printRef} className="max-w-3xl mx-auto px-4 mt-8 space-y-6">
+      {/* 網頁瀏覽版 */}
+      <div className="max-w-3xl mx-auto px-4 mt-8 space-y-6">
         {recipe.image && <img src={recipe.image} alt={recipe.title} className="w-full aspect-video object-cover rounded-3xl shadow-sm" />}
         <div>
           <div className="flex gap-2 mb-2">
             <span className="bg-brand-100 text-brand-600 text-xs font-bold px-3 py-1 rounded-full">{recipe.mainCategory}</span>
             <span className="bg-stone-100 text-stone-500 text-xs font-bold px-3 py-1 rounded-full">{recipe.subCategory}</span>
+            {recipe.series && <span className="bg-brand-500 text-white text-xs font-bold px-3 py-1 rounded-full">{recipe.series}</span>}
           </div>
           <h1 className="text-3xl font-serif font-bold text-stone-800">{recipe.title}</h1>
           {recipe.description && <p className="text-stone-500 mt-2">{recipe.description}</p>}
@@ -539,6 +549,66 @@ function RecipeDetail({ recipe, onEdit, onBack }: { recipe: Recipe; onEdit: () =
             <p className="text-stone-500 text-sm leading-relaxed whitespace-pre-wrap">{recipe.notes}</p>
           </div>
         )}
+      </div>
+
+      {/* 隱藏的 PDF 卡片（用於下載，不顯示在畫面上）*/}
+      <div className="fixed -left-[9999px] top-0 w-[794px] bg-white">
+        <div ref={cardRef} className="p-10 font-sans text-stone-800" style={{ fontFamily: 'sans-serif' }}>
+          {/* Header */}
+          <div className="border-b-2 border-stone-800 pb-4 mb-6">
+            <div className="text-xs text-stone-400 mb-1">{recipe.mainCategory}{recipe.subCategory ? ` · ${recipe.subCategory}` : ''}{recipe.series ? ` · ${recipe.series}` : ''}</div>
+            <h1 className="text-3xl font-bold text-stone-900">{recipe.title}</h1>
+            {recipe.description && <p className="text-stone-500 mt-1 text-sm">{recipe.description}</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-8">
+            {/* 食材 */}
+            <div>
+              <h2 className="font-bold text-base mb-3 border-b border-stone-200 pb-1">食材</h2>
+              <table className="w-full text-sm">
+                <tbody>
+                  {recipe.ingredients.filter(i => i.name).map(ing => (
+                    <tr key={ing.id} className="border-b border-stone-100">
+                      <td className="py-1.5 text-stone-700">{ing.name}</td>
+                      <td className="py-1.5 text-right font-bold text-stone-900">{ing.amount} {ing.unit}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {recipe.bakingStages.length > 0 && recipe.bakingStages[0].temp && (
+                <div className="mt-4">
+                  <h2 className="font-bold text-base mb-2 border-b border-stone-200 pb-1">烘焙設定</h2>
+                  {recipe.bakingStages.map((s, i) => (
+                    <div key={s.id} className="text-sm py-1 text-stone-600">
+                      第 {i + 1} 段：{s.temp}　{s.time}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 步驟 */}
+            <div>
+              <h2 className="font-bold text-base mb-3 border-b border-stone-200 pb-1">製作步驟</h2>
+              <ol className="space-y-2">
+                {recipe.steps.filter(s => s.content).map((step, idx) => (
+                  <li key={step.id} className="flex gap-2 text-sm">
+                    <span className="shrink-0 w-5 h-5 bg-stone-800 text-white rounded-full flex items-center justify-center text-xs font-bold">{idx + 1}</span>
+                    <span className="text-stone-700 leading-relaxed">{step.content}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+
+          {recipe.notes && (
+            <div className="mt-6 pt-4 border-t border-stone-200">
+              <h2 className="font-bold text-sm mb-1 text-stone-500">備註</h2>
+              <p className="text-sm text-stone-500 whitespace-pre-wrap">{recipe.notes}</p>
+            </div>
+          )}
+          <div className="mt-6 text-right text-xs text-stone-300">魔法師的櫥櫃</div>
+        </div>
       </div>
     </div>
   );
@@ -756,6 +826,16 @@ export default function App() {
             onLogout={handleLogout}
             onOpenInventory={() => setView('inventory')}
             onCompare={(selected) => { setCompareRecipes(selected); setView('compare'); }}
+            onExportAll={() => {
+              const data = JSON.stringify(recipes, null, 2);
+              const blob = new Blob([data], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `魔法師的櫥櫃備份_${new Date().toLocaleDateString('zh-TW').replace(/\//g, '-')}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
             onImportJSON={async (json) => {
               const data = JSON.parse(json);
               const recipes = Array.isArray(data) ? data : [data];

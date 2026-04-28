@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Plus, Clock, ChevronRight, Cake, Trash2, Search, LogOut, Package, Layers, X, CheckCircle2, ClipboardPaste } from 'lucide-react';
+import { Plus, Clock, ChevronRight, Cake, Trash2, Search, LogOut, Package, Layers, X, CheckCircle2, ClipboardPaste, Download } from 'lucide-react';
 import { Recipe } from '../types';
 
 interface RecipeGalleryProps {
@@ -12,9 +12,10 @@ interface RecipeGalleryProps {
   onOpenInventory: () => void;
   onCompare: (recipes: Recipe[]) => void;
   onImportJSON: (json: string) => void;
+  onExportAll: () => void;
 }
 
-export default function RecipeGallery({ recipes, onSelectRecipe, onNewRecipe, onDeleteRecipe, onLogout, onOpenInventory, onCompare, onImportJSON }: RecipeGalleryProps) {
+export default function RecipeGallery({ recipes, onSelectRecipe, onNewRecipe, onDeleteRecipe, onLogout, onOpenInventory, onCompare, onImportJSON, onExportAll }: RecipeGalleryProps) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [compareMode, setCompareMode] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
@@ -61,6 +62,9 @@ export default function RecipeGallery({ recipes, onSelectRecipe, onNewRecipe, on
             </button>
             <button onClick={() => { setShowImport(true); setImportText(''); }} className="p-3 text-stone-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition-all" title="貼上匯入食譜">
               <ClipboardPaste className="w-5 h-5" />
+            </button>
+            <button onClick={onExportAll} className="p-3 text-stone-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition-all" title="匯出全部食譜備份">
+              <Download className="w-5 h-5" />
             </button>
             {!compareMode ? (
               <>
