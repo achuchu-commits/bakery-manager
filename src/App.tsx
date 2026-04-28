@@ -541,30 +541,48 @@ function RecipeDetail({ recipe, onEdit, onBack, inventory }: {
 
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-100">
           <h3 className="font-bold text-stone-800 mb-4">食材列表</h3>
-          <div className="text-[11px] font-bold text-stone-400 grid grid-cols-[1fr_56px_36px_44px_44px] gap-1 px-1 mb-1">
+          <div className="text-[11px] font-bold text-stone-400 grid grid-cols-[1fr_52px_32px_42px_42px_52px] gap-1 px-1 mb-1">
             <span>食材</span><span className="text-right">用量</span><span className="text-center">單位</span>
-            <span className="text-center">烘焙%</span><span className="text-center">實際%</span>
+            <span className="text-center">烘焙%</span><span className="text-center">實際%</span><span className="text-right">小計</span>
           </div>
           <div className="space-y-0.5">
             {recipe.ingredients.filter(i => i.name).map(ing => {
               const amt = Number(ing.amount) || 0;
               const bakerPct = basis > 0 ? (amt / basis * 100) : 0;
               const actualPct = totalWeight > 0 ? (amt / totalWeight * 100) : 0;
+              const invItem = inventory.find(inv => inv.name === ing.name);
+              const unitPrice = invItem?.unitPrice ?? (ing as any).unitPrice ?? 0;
+              const subtotal = unitPrice * amt;
               return (
-                <div key={ing.id} className="grid grid-cols-[1fr_56px_36px_44px_44px] gap-1 items-center py-1.5 border-b border-stone-50 last:border-0">
+                <div key={ing.id} className="grid grid-cols-[1fr_52px_32px_42px_42px_52px] gap-1 items-center py-1.5 border-b border-stone-50 last:border-0">
                   <span className="text-stone-700 font-medium text-sm">{ing.name}</span>
                   <span className="text-stone-600 font-bold text-sm text-right">{ing.amount}</span>
                   <span className="text-stone-400 text-sm text-center">{ing.unit}</span>
                   <span className="text-brand-600 text-xs font-bold text-center">{bakerPct.toFixed(1)}%</span>
                   <span className="text-stone-400 text-xs text-center">{actualPct.toFixed(1)}%</span>
+                  <span className="text-xs text-right font-medium">
+                    {subtotal > 0 ? <span className="text-emerald-600">${subtotal.toFixed(1)}</span> : <span className="text-stone-300">—</span>}
+                  </span>
                 </div>
               );
             })}
           </div>
-          <div className="mt-3 pt-3 border-t border-stone-100 flex justify-between text-sm font-bold text-stone-500">
-            <span>總重量：<span className="text-stone-800">{totalWeight}g</span></span>
-            {flourTotal > 0 && <span className="text-xs text-stone-400">烘焙%基準：麵粉 {flourTotal}g</span>}
-          </div>
+          {(() => {
+            const totalCost = recipe.ingredients.reduce((sum, ing) => {
+              const invItem = inventory.find(inv => inv.name === ing.name);
+              const unitPrice = invItem?.unitPrice ?? (ing as any).unitPrice ?? 0;
+              return sum + unitPrice * (Number(ing.amount) || 0);
+            }, 0);
+            return (
+              <div className="mt-3 pt-3 border-t border-stone-100 flex justify-between text-sm font-bold text-stone-500">
+                <span>總重量：<span className="text-stone-800">{totalWeight}g</span></span>
+                <span className="flex items-center gap-4">
+                  {flourTotal > 0 && <span className="text-xs text-stone-400 font-normal">麵粉基準 {flourTotal}g</span>}
+                  {totalCost > 0 && <span className="text-emerald-700">總成本：${totalCost.toFixed(1)}</span>}
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-100">
