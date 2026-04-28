@@ -4,7 +4,7 @@ import { ChevronLeft, Plus, Trash2, Search, Save, Package, DollarSign, Calendar,
 import { IngredientInventoryItem, Category } from '../types';
 import { db } from '../firebase';
 import { storageManager } from '../services/storageManager';
-import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, setDoc, onSnapshot, query, where, orderBy } from 'firebase/firestore';
 import { buildDefaultIngredients, DEFAULT_CATEGORIES } from '../data/defaultIngredients';
 
 interface IngredientInventoryProps {
@@ -90,9 +90,11 @@ export default function IngredientInventory({ inventory, onBack, userId }: Ingre
       const itemData = { ...newItem, unitPrice };
       const saved = storageManager.saveInventoryItem(itemData);
       if (editingItem?.id) {
-        await updateDoc(doc(db, 'ingredient_inventory', editingItem.id), itemData as any);
+        // 現有項目：editingItem.id 是 Firestore 文件 ID
+        await updateDoc(doc(db, 'ingredient_inventory', editingItem.id), { ...itemData, id: saved.id } as any);
       } else {
-        await addDoc(collection(db, 'ingredient_inventory'), { ...itemData, id: saved.id });
+        // 新項目：用 setDoc 讓 Firestore doc ID = 我們的 UUID
+        await setDoc(doc(db, 'ingredient_inventory', saved.id), { ...itemData, id: saved.id });
       }
       setIsAdding(false); setEditingItem(null); setNewItem(initialItem);
     } catch (error) { console.error('Save Inventory Error:', error); alert('儲存失敗');

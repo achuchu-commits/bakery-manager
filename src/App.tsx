@@ -4,7 +4,7 @@ import {
   signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged, User
 } from 'firebase/auth';
 import {
-  collection, addDoc, updateDoc, deleteDoc, doc,
+  collection, addDoc, updateDoc, deleteDoc, doc, setDoc,
   onSnapshot, query, where, orderBy
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
@@ -163,7 +163,9 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, e
   const handleSave = async () => {
     if (!form.title) { alert('請填寫食譜名稱'); return; }
     setSaving(true);
-    try { await onSave(form); } finally { setSaving(false); }
+    try { await onSave(form); }
+    catch (err: any) { alert(`儲存失敗：${err?.message || '請再試一次'}`); }
+    finally { setSaving(false); }
   };
 
   const totalCost = form.ingredients.reduce((sum, ing) => {
@@ -458,25 +460,43 @@ function RecipeEditor({ recipe, onSave, onCancel, inventory, existingMainCats, e
 }
 
 // ── Recipe Detail ─────────────────────────────────────────────────────────────
-function RecipeDetail({ recipe, onEdit, onBack }: { recipe: Recipe; onEdit: () => void; onBack: () => void }) {
+function RecipeDetail({ recipe, onEdit, onBack, inventory }: {
+  recipe: Recipe; onEdit: () => void; onBack: () => void;
+  inventory: IngredientInventoryItem[];
+}) {
   const cardRef = React.useRef<HTMLDivElement>(null);
+
+  // 烘焙%基準：麵粉類總重，若無則總重
+  const totalWeight = recipe.ingredients.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const flourTotal = recipe.ingredients
+    .filter(i => inventory.find(inv => inv.name === i.name)?.category === '麵粉類')
+    .reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const basis = flourTotal > 0 ? flourTotal : totalWeight;
 
   const handleDownloadCard = async () => {
     if (!cardRef.current) return;
-    const canvas = await html2canvas(cardRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-    const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    const imgH = (canvas.height * pageW) / canvas.width;
-    // 若超過一頁，自動分頁
-    let y = 0;
-    while (y < imgH) {
-      if (y > 0) pdf.addPage();
-      pdf.addImage(imgData, 'PNG', 0, -y, pageW, imgH);
-      y += pageH;
+    // 暫時讓隱藏元素可見以便 html2canvas 擷取
+    const el = cardRef.current.parentElement as HTMLElement;
+    const prevStyle = el.getAttribute('style') || '';
+    el.style.cssText = 'position:absolute;left:0;top:0;width:794px;z-index:-1;opacity:0;pointer-events:none;';
+    await new Promise(r => setTimeout(r, 50)); // 等瀏覽器 repaint
+    try {
+      const canvas = await html2canvas(cardRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const imgH = (canvas.height * pageW) / canvas.width;
+      let y = 0;
+      while (y < imgH) {
+        if (y > 0) pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, -y, pageW, imgH);
+        y += pageH;
+      }
+      pdf.save(`${recipe.title}.pdf`);
+    } finally {
+      el.setAttribute('style', prevStyle);
     }
-    pdf.save(`${recipe.title}.pdf`);
   };
 
   return (
@@ -521,13 +541,29 @@ function RecipeDetail({ recipe, onEdit, onBack }: { recipe: Recipe; onEdit: () =
 
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-stone-100">
           <h3 className="font-bold text-stone-800 mb-4">食材列表</h3>
-          <div className="space-y-2">
-            {recipe.ingredients.map(ing => (
-              <div key={ing.id} className="flex items-center justify-between py-2 border-b border-stone-50 last:border-0">
-                <span className="text-stone-700 font-medium">{ing.name}</span>
-                <span className="text-stone-500 font-bold">{ing.amount} {ing.unit}</span>
-              </div>
-            ))}
+          <div className="text-[11px] font-bold text-stone-400 grid grid-cols-[1fr_56px_36px_44px_44px] gap-1 px-1 mb-1">
+            <span>食材</span><span className="text-right">用量</span><span className="text-center">單位</span>
+            <span className="text-center">烘焙%</span><span className="text-center">實際%</span>
+          </div>
+          <div className="space-y-0.5">
+            {recipe.ingredients.filter(i => i.name).map(ing => {
+              const amt = Number(ing.amount) || 0;
+              const bakerPct = basis > 0 ? (amt / basis * 100) : 0;
+              const actualPct = totalWeight > 0 ? (amt / totalWeight * 100) : 0;
+              return (
+                <div key={ing.id} className="grid grid-cols-[1fr_56px_36px_44px_44px] gap-1 items-center py-1.5 border-b border-stone-50 last:border-0">
+                  <span className="text-stone-700 font-medium text-sm">{ing.name}</span>
+                  <span className="text-stone-600 font-bold text-sm text-right">{ing.amount}</span>
+                  <span className="text-stone-400 text-sm text-center">{ing.unit}</span>
+                  <span className="text-brand-600 text-xs font-bold text-center">{bakerPct.toFixed(1)}%</span>
+                  <span className="text-stone-400 text-xs text-center">{actualPct.toFixed(1)}%</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 pt-3 border-t border-stone-100 flex justify-between text-sm font-bold text-stone-500">
+            <span>總重量：<span className="text-stone-800">{totalWeight}g</span></span>
+            {flourTotal > 0 && <span className="text-xs text-stone-400">烘焙%基準：麵粉 {flourTotal}g</span>}
           </div>
         </div>
 
@@ -552,7 +588,7 @@ function RecipeDetail({ recipe, onEdit, onBack }: { recipe: Recipe; onEdit: () =
       </div>
 
       {/* 隱藏的 PDF 卡片（用於下載，不顯示在畫面上）*/}
-      <div className="fixed -left-[9999px] top-0 w-[794px] bg-white">
+      <div style={{ position: 'absolute', left: '-9999px', top: 0, width: '794px', background: 'white' }}>
         <div ref={cardRef} className="p-10 font-sans text-stone-800" style={{ fontFamily: 'sans-serif' }}>
           {/* Header */}
           <div className="border-b-2 border-stone-800 pb-4 mb-6">
@@ -764,7 +800,7 @@ export default function App() {
     setRecipes(local);
     const q = query(collection(db, 'recipes'), where('userId', '==', user.uid), orderBy('createdAt', 'desc'));
     return onSnapshot(q, (snap) => {
-      const fbRecipes = snap.docs.map(d => ({ id: d.id, ...d.data() })) as Recipe[];
+      const fbRecipes = snap.docs.map(d => ({ ...d.data(), id: d.id })) as Recipe[];
       setRecipes(fbRecipes);
     });
   }, [user]);
@@ -776,7 +812,7 @@ export default function App() {
     setInventory(local);
     const q = query(collection(db, 'ingredient_inventory'), where('userId', '==', user.uid));
     return onSnapshot(q, (snap) => {
-      const fbItems = snap.docs.map(d => ({ id: d.id, ...d.data() })) as IngredientInventoryItem[];
+      const fbItems = snap.docs.map(d => ({ ...d.data(), id: d.id })) as IngredientInventoryItem[];
       setInventory(fbItems);
     });
   }, [user]);
@@ -785,13 +821,20 @@ export default function App() {
     if (!user) return;
     const data = { ...recipe, userId: user.uid };
     const saved = storageManager.saveRecipe(data);
-    if (recipe.id) {
-      await updateDoc(doc(db, 'recipes', recipe.id), data as any);
-    } else {
-      await addDoc(collection(db, 'recipes'), { ...data, id: saved.id });
+    try {
+      if (recipe.id) {
+        // 現有食譜：recipe.id 就是 Firestore 文件 ID
+        await updateDoc(doc(db, 'recipes', recipe.id), data as any);
+      } else {
+        // 新食譜：用 setDoc 讓 Firestore doc ID = 我們的 UUID，避免 ID 不一致
+        await setDoc(doc(db, 'recipes', saved.id), { ...data, id: saved.id });
+      }
+      setView('gallery');
+      setEditingRecipe(null);
+    } catch (err) {
+      console.error('Save recipe error:', err);
+      alert('儲存失敗，請再試一次');
     }
-    setView('gallery');
-    setEditingRecipe(null);
   }, [user]);
 
   const handleDeleteRecipe = useCallback(async (id: string) => {
@@ -865,6 +908,7 @@ export default function App() {
             recipe={selectedRecipe}
             onEdit={() => { setEditingRecipe(selectedRecipe); setView('edit'); }}
             onBack={() => setView('gallery')}
+            inventory={inventory}
           />
         </motion.div>
       )}
