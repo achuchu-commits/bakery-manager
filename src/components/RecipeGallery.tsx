@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Plus, Clock, ChevronRight, Cake, Trash2, Search, LogOut, Package, Layers, X, CheckCircle2 } from 'lucide-react';
+import { Plus, Clock, ChevronRight, Cake, Trash2, Search, LogOut, Package, Layers, X, CheckCircle2, ClipboardPaste } from 'lucide-react';
 import { Recipe } from '../types';
 
 interface RecipeGalleryProps {
@@ -11,12 +11,15 @@ interface RecipeGalleryProps {
   onLogout: () => void;
   onOpenInventory: () => void;
   onCompare: (recipes: Recipe[]) => void;
+  onImportJSON: (json: string) => void;
 }
 
-export default function RecipeGallery({ recipes, onSelectRecipe, onNewRecipe, onDeleteRecipe, onLogout, onOpenInventory, onCompare }: RecipeGalleryProps) {
+export default function RecipeGallery({ recipes, onSelectRecipe, onNewRecipe, onDeleteRecipe, onLogout, onOpenInventory, onCompare, onImportJSON }: RecipeGalleryProps) {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [compareMode, setCompareMode] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
+  const [showImport, setShowImport] = React.useState(false);
+  const [importText, setImportText] = React.useState('');
 
   const filteredRecipes = recipes.filter(r =>
     r.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -55,6 +58,9 @@ export default function RecipeGallery({ recipes, onSelectRecipe, onNewRecipe, on
           <div className="flex items-center gap-4">
             <button onClick={onOpenInventory} className="p-3 text-stone-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition-all" title="食材庫存管理">
               <Package className="w-5 h-5" />
+            </button>
+            <button onClick={() => { setShowImport(true); setImportText(''); }} className="p-3 text-stone-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition-all" title="貼上匯入食譜">
+              <ClipboardPaste className="w-5 h-5" />
             </button>
             {!compareMode ? (
               <>
@@ -179,6 +185,44 @@ export default function RecipeGallery({ recipes, onSelectRecipe, onNewRecipe, on
           </div>
         )}
       </main>
+
+      {/* 貼上匯入 Modal */}
+      {showImport && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowImport(false)}>
+          <div className="bg-white rounded-3xl w-full max-w-lg p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-stone-800 text-lg">貼上匯入食譜</h3>
+              <button onClick={() => setShowImport(false)} className="text-stone-400 hover:text-stone-700"><X className="w-5 h-5" /></button>
+            </div>
+            <p className="text-sm text-stone-500 mb-3">把 Claude 給你的 JSON 貼到下方，點匯入即可</p>
+            <textarea
+              value={importText}
+              onChange={e => setImportText(e.target.value)}
+              placeholder='貼上 JSON 內容...'
+              rows={10}
+              className="w-full bg-stone-50 border border-stone-200 rounded-2xl px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-brand-500 outline-none resize-none"
+            />
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setShowImport(false)} className="flex-1 py-3 rounded-2xl bg-stone-100 text-stone-600 font-bold hover:bg-stone-200 transition-all">取消</button>
+              <button
+                onClick={() => {
+                  try {
+                    onImportJSON(importText.trim());
+                    setShowImport(false);
+                    setImportText('');
+                  } catch {
+                    alert('JSON 格式錯誤，請確認內容是否正確');
+                  }
+                }}
+                disabled={!importText.trim()}
+                className="flex-1 py-3 rounded-2xl bg-brand-500 text-white font-bold hover:bg-brand-600 disabled:bg-stone-300 transition-all"
+              >
+                匯入
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sticky compare bar */}
       {compareMode && selectedIds.size >= 2 && (

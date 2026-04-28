@@ -756,6 +756,26 @@ export default function App() {
             onLogout={handleLogout}
             onOpenInventory={() => setView('inventory')}
             onCompare={(selected) => { setCompareRecipes(selected); setView('compare'); }}
+            onImportJSON={async (json) => {
+              const data = JSON.parse(json);
+              const recipes = Array.isArray(data) ? data : [data];
+              for (const r of recipes) {
+                const recipe: Recipe = {
+                  title: r.title || '未命名食譜',
+                  description: r.description || '',
+                  mainCategory: r.mainCategory || '',
+                  subCategory: r.subCategory || '',
+                  series: r.series || '',
+                  ingredients: (r.ingredients || []).map((i: any) => ({ ...i, id: crypto.randomUUID() })),
+                  steps: (r.steps || []).map((s: any) => ({ ...s, id: crypto.randomUUID() })),
+                  bakingStages: (r.bakingStages || []).map((b: any) => ({ ...b, id: crypto.randomUUID() })),
+                  image: r.image || null,
+                  notes: r.notes || '',
+                };
+                await handleSaveRecipe(recipe);
+              }
+              alert(`成功匯入 ${recipes.length} 個食譜！`);
+            }}
           />
         </motion.div>
       )}
